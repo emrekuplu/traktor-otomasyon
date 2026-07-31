@@ -13,7 +13,9 @@ from qfluentwidgets import (
 )
 from constants import BG_COLOR, TEXT_MUTED, CARD_BG, para_formatla
 from services.urun_service import UrunService
-from views.veresiye_dialog import VeresiyeDialog
+from services.pos_service import PosService
+from core.events import event_bus
+from qfluentwidgets import LineEdit
 
 
 class PosUrunKarti(QFrame):
@@ -175,10 +177,15 @@ class OrderScreen(QWidget):
         super().__init__(parent)
         self.go_back = go_back
         self._service = UrunService()
+        self._pos_service = PosService()
         
         # State
         self.tum_urunler = []
         self.cart = {}  # urun_id -> {'urun': dict, 'miktar': int}
+
+        # EventBus abonelikleri
+        event_bus.urun_degisti.connect(self._verileri_yukle)
+        event_bus.stok_degisti.connect(self._verileri_yukle)
 
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setStyleSheet(f"background-color: {BG_COLOR};")
@@ -289,6 +296,13 @@ class OrderScreen(QWidget):
         self.lbl_toplam.setAlignment(Qt.AlignRight)
         self.lbl_toplam.setStyleSheet("font-size: 32px; font-weight: bold; color: #111827; border: none;")
         bottom_layout.addWidget(self.lbl_toplam)
+        
+        self.input_musteri = LineEdit()
+        self.input_musteri.setPlaceholderText("Müşteri Adı (Boş bırakılırsa Perakende Müşteri)")
+        self.input_musteri.setFixedHeight(40)
+        bottom_layout.addWidget(self.input_musteri)
+        
+        bottom_layout.addSpacing(8)
 
         # Ödeme Butonları
         btns_layout = QHBoxLayout()
@@ -321,7 +335,7 @@ class OrderScreen(QWidget):
             PushButton { background-color: #E28743; color: white; font-size: 18px; font-weight: bold; border-radius: 10px; border: none; }
             PushButton:hover { background-color: #C6763A; }
         """)
-        self.btn_veresiye.clicked.connect(self._veresiye_modal_ac)
+        self.btn_veresiye.clicked.connect(lambda: self._odeme_yap("Veresiye/Cari"))
         btns_layout.addWidget(self.btn_veresiye)
 
         bottom_layout.addLayout(btns_layout)
@@ -407,40 +421,59 @@ class OrderScreen(QWidget):
 
         self.lbl_toplam.setText(f"Genel Toplam: {para_formatla(toplam)}")
 
-    def _odeme_yap(self, odeme_tipi: str, musteri: str = None):
+    def _odeme_yap(self, odeme_tipi: str):
         if not self.cart:
             InfoBar.warning(title="Hata", content="Sepet boş!", parent=self, duration=2000)
             return
 
-        # Stoktan düş ve satışı tamamla
-        try:
-            for uid, data in self.cart.items():
-                eski_stok = data["urun"].get("stok", 0)
-                yeni_stok = max(0, eski_stok - data["miktar"])
-                
-                # Stok güncellenirken (fark < 0 olduğu için) UrunService "ÇIKIŞ" logu atacaktır.
-                self._service.stok_guncelle(uid, yeni_stok)
+        # Sepet detaylarını hazırla
+        sepet_items = []
+        toplam_tutar = 0.0
+        for uid, data in self.cart.items():
+            urun = data["urun"]
+            miktar = data["miktar"]
+            fiyat = urun.get("satis_fiyati", 0.0)
+            sepet_items.append({
+                "urun_id": uid,
+                "miktar": miktar,
+                "birim_fiyat": fiyat
+            })
+            toplam_tutar += miktar * fiyat
+
+        # Müşteri adını belirle
+        musteri_adi = self.input_musteri.text().strip()
+        if not musteri_adi:
+            musteri_adi = "Perakende Müşteri"
+
+        # Ödemeleri hazırla
+        odemeler = []
+        if odeme_tipi == "Nakit":
+            kasalar = self._pos_service.kasalari_getir()
+            kasa_id = kasalar[0]["id"] if kasalar else None
+            odemeler.append({"odeme_tipi": "NAKIT", "tutar": toplam_tutar, "kasa_id": kasa_id, "banka_id": None})
             
-            mesaj = f"Satış ({odeme_tipi}) başarıyla tamamlandı!"
-            if musteri:
-                mesaj += f"\nMüşteri: {musteri}"
-                
+        elif odeme_tipi == "Kredi Kartı":
+            bankalar = self._pos_service.bankalari_getir()
+            banka_id = bankalar[0]["id"] if bankalar else None
+            odemeler.append({"odeme_tipi": "KREDI_KARTI", "tutar": toplam_tutar, "kasa_id": None, "banka_id": banka_id})
+            
+        elif odeme_tipi == "Veresiye/Cari":
+            # Veresiye satışlarda tahsilat sıfır
+            pass
+
+        try:
+            # Satışı tamamla (Transaction + EventBus Trigger)
+            self._pos_service.satis_yap(sepet_items, odemeler, indirim=0.0, musteri_adi=musteri_adi)
+            
+            mesaj = f"Satış ({odeme_tipi}) başarıyla tamamlandı!\nMüşteri: {musteri_adi}"
             InfoBar.success(title="Başarılı", content=mesaj, parent=self, duration=3000)
             
-            # Reset
+            # Formu temizle
             self.cart.clear()
             self._sepet_guncelle()
-            self._verileri_yukle() # Stoklar güncellendiği için sol paneli tazele
+            self.input_musteri.clear()
+            # _verileri_yukle EventBus sinyali ile zaten tetiklenecek
 
         except Exception as e:
-            InfoBar.error(title="Hata", content=f"İşlem sırasında hata oluştu:\n{e}", parent=self, duration=4000)
+            InfoBar.error(title="Hata", content=f"İşlem sırasında hata oluştu:\n{str(e)}", parent=self, duration=4000)
 
-    def _veresiye_modal_ac(self):
-        if not self.cart:
-            InfoBar.warning(title="Hata", content="Sepet boş!", parent=self, duration=2000)
-            return
-            
-        toplam = sum(d["miktar"] * d["urun"].get("satis_fiyati", 0.0) for d in self.cart.values())
-        dialog = VeresiyeDialog(tutar=toplam, parent=self)
-        if dialog.exec_():
-            self._odeme_yap("Veresiye/Cari", musteri=dialog.musteri_adi)

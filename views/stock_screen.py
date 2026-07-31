@@ -6,7 +6,7 @@
 #  ÖNEMLİ     : sqlite3 veya doğrudan DB kodu BULUNMAZ.
 # =============================================================================
 
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QScrollArea,
     QFrame, QDialog, QStackedWidget, QLabel
@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (
 from qfluentwidgets import (
     SubtitleLabel, PrimaryPushButton, PushButton,
     FlowLayout, SearchLineEdit, ComboBox, InfoBar, CaptionLabel,
-    IconWidget, FluentIcon, StrongBodyLabel
+    IconWidget, FluentIcon, StrongBodyLabel, IndeterminateProgressBar
 )
 from constants import BG_COLOR, TEXT_MUTED, ANA_MARKALAR
 from services.urun_service import UrunService
@@ -22,6 +22,7 @@ from views.urun_ekle_dialog import UrunEkleDialog
 from views.urun_karti import UrunKarti
 from views.marka_vitrini import MarkaVitrini
 from views.filtre_vitrini import FiltreVitrini
+from core.events import event_bus
 
 
 def _opaque_widget(parent=None, color: str = BG_COLOR) -> QWidget:
@@ -37,12 +38,65 @@ SAYFA_URUNLER = 1
 SAYFA_FILTRE_VITRINI = 2
 
 
+# =============================================================================
+#  Arka Plan Veri Çekme Thread'i
+# =============================================================================
+
+class UrunYuklemeThread(QThread):
+    """
+    Veritabanı okumasını GUI thread'inden bağımsız olarak arka planda çalıştırır.
+    İşlem bittiğinde `veri_hazir` sinyali ile (urunler listesi, başlık metni)
+    çiftini ana thread'e gönderir.
+    """
+    veri_hazir = pyqtSignal(list, str)   # (urunler: list[dict], baslik: str)
+    hata_olustu = pyqtSignal(str)        # Hata mesajı
+
+    def __init__(self, service: UrunService,
+                 aktif_marka: str | None,
+                 aktif_filtre_tipi: str | None,
+                 parent=None):
+        super().__init__(parent)
+        self._service = service
+        self._aktif_marka = aktif_marka
+        self._aktif_filtre_tipi = aktif_filtre_tipi
+
+    def run(self):
+        """Arka planda çalışır – GUI thread'ini BLOKLMAZ."""
+        try:
+            marka = self._aktif_marka
+            filtre_tipi = self._aktif_filtre_tipi
+
+            if filtre_tipi is not None:
+                urunler = self._service.alt_kategoriye_gore_getir(filtre_tipi)
+                baslik = f"⚙️  {filtre_tipi}"
+            elif marka is None or marka == "Tüm Markalar":
+                urunler = self._service.tum_urunleri_getir()
+                baslik  = "📦  Tüm Ürünler"
+            elif marka == "Diğer Markalar":
+                urunler = self._service.diger_markalari_getir()
+                baslik  = "📦  Diğer Markalar"
+            else:
+                urunler = self._service.markaya_gore_getir(marka)
+                baslik  = f"📦  {marka}"
+
+            self.veri_hazir.emit(urunler, baslik)
+        except Exception as exc:
+            self.hata_olustu.emit(str(exc))
+
+
+# =============================================================================
+#  Ana Ekran
+# =============================================================================
+
 class StockScreen(QWidget):
     """
     İki kademeli ürün & stok yönetimi ekranı.
 
     Sayfa 0 – MarkaVitrini: 9 ana marka + Diğer + Tüm Markalar kutularını gösterir.
     Sayfa 1 – Ürün Listesi: Seçilen markaya göre filtrelenmiş ürün kartları.
+
+    Veri yükleme işlemi UrunYuklemeThread üzerinden arka planda yapılır;
+    GUI thread'i hiçbir zaman bloklanmaz.
     """
 
     def __init__(self, go_back, parent=None):
@@ -52,9 +106,14 @@ class StockScreen(QWidget):
         self._aktif_marka: str | None = None   # "Tüm Markalar" / "Diğer" / "Fiat" vb.
         self._aktif_filtre_tipi: str | None = None
         self.kart_listesi: list[UrunKarti] = []
+        self._yukleme_thread: UrunYuklemeThread | None = None  # Aktif thread referansı
 
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setStyleSheet(f"background-color: {BG_COLOR};")
+
+        # EventBus abonelikleri
+        event_bus.urun_degisti.connect(self._canli_guncelle)
+        event_bus.stok_degisti.connect(self._canli_guncelle)
 
         # ── Ana QStackedWidget ────────────────────────────────────────────────
         self.stack = QStackedWidget(self)
@@ -136,6 +195,12 @@ class StockScreen(QWidget):
         self.baslik_lbl = SubtitleLabel("📦  Ürün Listesi")
         root.addWidget(self.baslik_lbl)
 
+        # ── Yükleniyor Göstergesi ─────────────────────────────────────────────
+        self.progress_bar = IndeterminateProgressBar()
+        self.progress_bar.setFixedHeight(3)
+        self.progress_bar.setVisible(False)
+        root.addWidget(self.progress_bar)
+
         # ── Scroll + FlowLayout ───────────────────────────────────────────────
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
@@ -176,8 +241,16 @@ class StockScreen(QWidget):
         """Vitrin'de bir markaya tıklandığında çağrılır."""
         self._aktif_marka = marka
         self._aktif_filtre_tipi = None
-        self.verileri_yukle()
         self.stack.setCurrentIndex(SAYFA_URUNLER)
+        self.verileri_yukle()
+
+    def _canli_guncelle(self):
+        """Arka planda EventBus tetiklendiğinde veriyi yeniler."""
+        # Eğer vitrin ekranındaysak sadece vitrini yenile
+        if self.stack.currentIndex() == SAYFA_VITRIN:
+            self.vitrin.yenile()
+        elif self.stack.currentIndex() == SAYFA_URUNLER:
+            self.verileri_yukle()
 
     def _filtre_vitrini_secildi(self):
         self.stack.setCurrentIndex(SAYFA_FILTRE_VITRINI)
@@ -185,8 +258,8 @@ class StockScreen(QWidget):
     def _filtre_secildi(self, filtre_tipi: str):
         self._aktif_marka = None
         self._aktif_filtre_tipi = filtre_tipi
-        self.verileri_yukle()
         self.stack.setCurrentIndex(SAYFA_URUNLER)
+        self.verileri_yukle()
 
     def _vitrine_don_from_filtre(self):
         self.stack.setCurrentIndex(SAYFA_VITRIN)
@@ -202,33 +275,83 @@ class StockScreen(QWidget):
 
     # ── Veri İşlemleri ────────────────────────────────────────────────────────
 
-    def verileri_yukle(self):
-        """Aktif markaya göre ürünleri çeker ve kartları dizer."""
-        # Kartları temizle
+    def _kartlari_temizle(self):
+        """
+        FlowLayout içindeki tüm ürün kartlarını güvenli şekilde siler.
+
+        NOT: qfluentwidgets.FlowLayout.takeAt() standart Qt layout'ların
+        aksine QLayoutItem değil, doğrudan widget nesnesini döndürür.
+        Bu nedenle .widget() çağrısı yapılmaz; kart doğrudan kullanılır.
+        """
         for kart in self.kart_listesi:
-            self.flow.removeWidget(kart)
-            kart.deleteLater()
+            self.flow.removeWidget(kart)  # Layout referansını serbest bırak
+            kart.setParent(None)          # Qt parent ağacından kopar
+            kart.deleteLater()            # Event loop boşaldığında belleği temizle
         self.kart_listesi.clear()
 
-        # Markaya veya Filtreye göre veri çek
-        marka = self._aktif_marka
-        filtre_tipi = self._aktif_filtre_tipi
 
-        if filtre_tipi is not None:
-            urunler = self._service.alt_kategoriye_gore_getir(filtre_tipi)
-            baslik = f"⚙️  {filtre_tipi}"
-        elif marka is None or marka == "Tüm Markalar":
-            urunler = self._service.tum_urunleri_getir()
-            baslik  = "📦  Tüm Ürünler"
-        elif marka == "Diğer Markalar":
-            urunler = self._service.diger_markalari_getir()
-            baslik  = "📦  Diğer Markalar"
-        else:
-            urunler = self._service.markaya_gore_getir(marka)
-            baslik  = f"📦  {marka}"
+    def verileri_yukle(self):
+        """
+        Arka planda UrunYuklemeThread başlatarak veritabanından veri çeker.
+        GUI thread'ini bloklamamak için tüm DB okuma işlemi QThread içinde yapılır.
+        Veri hazır olduğunda _verileri_renderla slot'u tetiklenir.
+        """
+        # Eğer önceki thread hâlâ çalışıyorsa iptal et
+        if self._yukleme_thread and self._yukleme_thread.isRunning():
+            self._yukleme_thread.quit()
+            self._yukleme_thread.wait(500)
 
+        # Yükleme göstergelerini etkinleştir
+        self._yuklenme_basladi()
+
+        # Thread'i oluştur ve bağla
+        self._yukleme_thread = UrunYuklemeThread(
+            self._service,
+            self._aktif_marka,
+            self._aktif_filtre_tipi,
+            parent=self,
+        )
+        self._yukleme_thread.veri_hazir.connect(self._verileri_renderla)
+        self._yukleme_thread.hata_olustu.connect(self._yuklenme_hatasi)
+        self._yukleme_thread.finished.connect(self._yuklenme_bitti)
+        self._yukleme_thread.start()
+
+    def _yuklenme_basladi(self):
+        """Thread başladığında UI'yi kilitlemeden yükleniyor göstergesi açar."""
+        self.progress_bar.setVisible(True)
+        self.progress_bar.start()
+        self.btn_yeni.setEnabled(False)
+        self.btn_vitrine_don.setEnabled(False)
+        self.scroll.setVisible(False)
+        self.empty_widget.setVisible(False)
+
+    def _yuklenme_bitti(self):
+        """Thread tamamlandığında (başarılı veya hatalı) göstergeyi kapatır."""
+        self.progress_bar.stop()
+        self.progress_bar.setVisible(False)
+        self.btn_yeni.setEnabled(True)
+        self.btn_vitrine_don.setEnabled(True)
+
+    def _yuklenme_hatasi(self, mesaj: str):
+        """Thread'den gelen hata sinyali."""
+        InfoBar.error(
+            "Veri Yükleme Hatası",
+            f"Ürünler yüklenirken bir sorun oluştu: {mesaj}",
+            parent=self.window(),
+        )
+
+    def _verileri_renderla(self, urunler: list, baslik: str):
+        """
+        Thread'den gelen ürün listesini GUI'ye yansıtır.
+        Bu metod her zaman ana (GUI) thread'inde çalışır – pyqtSignal garantisi.
+        """
+        # ── 1. Eski kartları güvenli şekilde temizle ─────────────────────────
+        self._kartlari_temizle()
+
+        # ── 2. Başlığı güncelle ───────────────────────────────────────────────
         self.baslik_lbl.setText(baslik)
 
+        # ── 3. Yeni kartları oluştur ve layout'a ekle ─────────────────────────
         kategoriler = {"Tüm Kategoriler"}
         for u in urunler:
             kart = UrunKarti(
@@ -244,18 +367,16 @@ class StockScreen(QWidget):
             self.kart_listesi.append(kart)
             kategoriler.add(u["kategori"])
 
-        # Kategori filtresini güncelle
+        # ── 4. Kategori filtresini güncelle ───────────────────────────────────
         self.kat_filtresi.blockSignals(True)
         self.kat_filtresi.clear()
         diger_kat = sorted(k for k in kategoriler if k != "Tüm Kategoriler")
         self.kat_filtresi.addItems(["Tüm Kategoriler"] + diger_kat)
         self.kat_filtresi.blockSignals(False)
 
-        # Sorunun kalıcı çözümü: 
-        # Çok sayıda ürün eklendikten sonra Qt henüz widget'ların gerçek 
-        # boyutlarını hesaplamamış olabilir. Bu yüzden layout'u zorla 
-        # güncelleme işlemini 50 milisaniye (çok kısa bir an) gecikmeyle, 
-        # uygulama döngüsü (event loop) nefes aldıktan sonra yapıyoruz.
+        # ── 5. Qt layout boyutlarını ve filtreyi gecikmeli güncelle ──────────
+        # FlowLayout, widget'ların gerçek boyutlarını event loop döndükten
+        # sonra hesaplar; 50 ms'lik gecikme bu hesaplamaya alan tanır.
         QTimer.singleShot(50, self._gecikmeli_layout_guncelle)
 
     def _gecikmeli_layout_guncelle(self):

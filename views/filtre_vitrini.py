@@ -14,7 +14,7 @@ from qfluentwidgets import (
     SimpleCardWidget, StrongBodyLabel, CaptionLabel,
     LargeTitleLabel, PushButton, IconWidget, FluentIcon
 )
-from constants import BG_COLOR, TEXT_MUTED, get_path
+from constants import BG_COLOR, TEXT_MUTED, get_resource_path
 
 
 class FiltreKarti(SimpleCardWidget):
@@ -162,10 +162,10 @@ class FiltreVitrini(QWidget):
 
         # ── Filtre Kartları ───────────────────────────────────────────────────
         filtreler = [
-            ("Hava Filtresi", "Motor ve kabin içi hava akış sistemleri", get_path("resources/icons/filters/air_filter.png")),
-            ("Yağ Filtresi", "Motor karter ve şanzıman yağ filtreleri", get_path("resources/icons/filters/oil_filter.png")),
-            ("Mazot Filtresi", "Yakıt enjeksiyon ve ayırıcı filtreler", get_path("resources/icons/filters/fuel_filter.png")),
-            ("Hidrolik Filtresi", "Hidrolik lift ve sistem filtreleri", get_path("resources/icons/filters/hydraulic_filter.png"))
+            ("Hava Filtresi", "Motor ve kabin içi hava akış sistemleri", get_resource_path("resources/icons/filters/air_filter.png")),
+            ("Yağ Filtresi", "Motor karter ve şanzıman yağ filtreleri", get_resource_path("resources/icons/filters/oil_filter.png")),
+            ("Mazot Filtresi", "Yakıt enjeksiyon ve ayırıcı filtreler", get_resource_path("resources/icons/filters/fuel_filter.png")),
+            ("Hidrolik Filtresi", "Hidrolik lift ve sistem filtreleri", get_resource_path("resources/icons/filters/hydraulic_filter.png"))
         ]
 
         for i, (ad, subtitle, icon_path) in enumerate(filtreler):

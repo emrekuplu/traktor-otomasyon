@@ -8,6 +8,7 @@ import sqlite3
 from database.urun_repository import UrunRepository
 from services.dosya_service import DosyaService
 from constants import ANA_MARKALAR
+from core.events import event_bus
 
 
 class UrunService:
@@ -123,6 +124,7 @@ class UrunService:
         except sqlite3.IntegrityError:
             raise ValueError(f"{kod} kodlu bir ürün zaten var!")
 
+        event_bus.urun_degisti.emit()
         return {"ad": ad, "kod": kod, "marka": marka}
 
     def stok_guncelle(self, urun_id: int, yeni_stok: int) -> None:
@@ -132,9 +134,12 @@ class UrunService:
             fark = yeni_stok - eski_urun["stok"]
             if fark != 0:
                 islem_tipi = "GİRİŞ" if fark > 0 else "ÇIKIŞ"
-                self._repo.stok_hareket_ekle(urun_id, islem_tipi, abs(fark))
+                aciklama = f"Stok Artırma ({eski_urun['ad']})" if fark > 0 else f"Stok Azaltma ({eski_urun['ad']})"
+                self._repo.stok_hareket_ekle(urun_id, islem_tipi, abs(fark), aciklama)
 
         self._repo.stok_guncelle(urun_id, yeni_stok)
+        event_bus.urun_degisti.emit()
+        event_bus.stok_degisti.emit()
 
     def urun_guncelle(
         self,
@@ -167,7 +172,8 @@ class UrunService:
             fark = stok - eski_urun["stok"]
             if fark != 0:
                 islem_tipi = "GİRİŞ" if fark > 0 else "ÇIKIŞ"
-                self._repo.stok_hareket_ekle(urun_id, islem_tipi, abs(fark))
+                aciklama = f"Stok Artırma ({eski_urun['ad']})" if fark > 0 else f"Stok Azaltma ({eski_urun['ad']})"
+                self._repo.stok_hareket_ekle(urun_id, islem_tipi, abs(fark), aciklama)
 
         hedef_resim = self._dosya.resim_kaydet(secilen_resim, kod) if secilen_resim else None
         self._repo.guncelle(
@@ -178,7 +184,10 @@ class UrunService:
             satis_fiyati=satis_fiyati,
             alt_kategori=alt_kategori,
         )
+        event_bus.urun_degisti.emit()
+        event_bus.stok_degisti.emit()
 
     def urun_sil(self, urun_id: int) -> None:
         """Ürünü veritabanından kalıcı olarak siler."""
         self._repo.sil(urun_id)
+        event_bus.urun_degisti.emit()

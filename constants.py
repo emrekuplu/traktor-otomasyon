@@ -5,11 +5,18 @@
 
 import os
 import sys
+from pathlib import Path
 
-def get_path(relative_path):
+def get_resource_path(relative_path):
     if hasattr(sys, '_MEIPASS'):
         return os.path.join(sys._MEIPASS, relative_path)
     return os.path.join(os.path.abspath('.'), relative_path)
+
+def get_data_path():
+    home = Path.home()
+    app_dir = home / ".traktor_mete"
+    app_dir.mkdir(parents=True, exist_ok=True)
+    return str(app_dir)
 
 def para_formatla(deger: float) -> str:
     """
@@ -26,7 +33,7 @@ DEMO_USERNAME = "admin"
 DEMO_PASSWORD = "admin"
 
 # ── Veritabanı ────────────────────────────────────────────────────────────────
-DB_PATH = get_path("traktor_mete_v2.db")
+DB_PATH = os.path.join(get_data_path(), "traktor_mete_v2.db")
 
 # ── Renk Paleti ───────────────────────────────────────────────────────────────
 BG_COLOR     = "#F5F5F7"
@@ -43,9 +50,9 @@ IDX_ORDER   = 4
 IDX_CRITICAL= 5
 
 # ── Dosya Sistemi ─────────────────────────────────────────────────────────────
-RESIM_KLASORU = get_path("urun_resimleri")
-LOGOLAR_KLASORU = get_path("resources/marka_logolari")
-IKON_KLASORU = get_path("resources/icons")
+RESIM_KLASORU = os.path.join(get_data_path(), "urun_resimleri")
+LOGOLAR_KLASORU = get_resource_path("resources/marka_logolari")
+IKON_KLASORU = get_resource_path("resources/icons")
 
 # ── Marka Sistemi ─────────────────────────────────────────────────────────────
 # Vitrin ekranındaki 9 ana marka

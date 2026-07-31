@@ -6,6 +6,7 @@
 # =============================================================================
 
 import sqlite3
+from contextlib import closing
 from constants import DB_PATH, RESIM_KLASORU
 import os
 
@@ -24,7 +25,11 @@ class DbManager:
         Çağıran taraf bağlantıyı context manager ile yönetmelidir:
             with DbManager.baglanti_al() as conn: ...
         """
-        return sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=10.0)
+        # WAL Mode ve Timeout ayarları ile kilitlenme koruması ve performans
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA busy_timeout=5000;")
+        return conn
 
     @classmethod
     def baslat(cls) -> None:
@@ -38,7 +43,7 @@ class DbManager:
         # ── Resim klasörü ──────────────────────────────────────────────────────
         os.makedirs(RESIM_KLASORU, exist_ok=True)
 
-        with cls.baglanti_al() as conn:
+        with closing(cls.baglanti_al()) as conn, conn:
             cursor = conn.cursor()
 
             # ── Tablo oluşturma ────────────────────────────────────────────────
@@ -63,11 +68,69 @@ class DbManager:
                 )
             """)
 
-            # ── Güvenli sütun migrasyonu ───────────────────────────────────────
-            mevcut_sutunlar = [
-                row[1]
-                for row in cursor.execute("PRAGMA table_info(urunler)").fetchall()
-            ]
+            # Cariler tablosunu siliyoruz/pasife alıyoruz (artık düz metin tutacağız)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS kasalar (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ad TEXT NOT NULL,
+                    bakiye REAL NOT NULL DEFAULT 0.0
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS bankalar (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ad TEXT NOT NULL,
+                    bakiye REAL NOT NULL DEFAULT 0.0,
+                    komisyon_orani REAL DEFAULT 0.0
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS satislar (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    fis_no TEXT UNIQUE NOT NULL,
+                    musteri_adi TEXT,
+                    toplam_tutar REAL NOT NULL,
+                    indirim REAL DEFAULT 0.0,
+                    net_tutar REAL NOT NULL,
+                    odeme_durumu TEXT NOT NULL, -- 'ODENDI', 'KISMEN', 'ODENMEDI'
+                    tarih DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS satis_detaylari (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    satis_id INTEGER NOT NULL,
+                    urun_id INTEGER NOT NULL,
+                    miktar INTEGER NOT NULL,
+                    birim_fiyat REAL NOT NULL,
+                    ara_toplam REAL NOT NULL,
+                    FOREIGN KEY(satis_id) REFERENCES satislar(id),
+                    FOREIGN KEY(urun_id) REFERENCES urunler(id)
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS odemeler (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    satis_id INTEGER,
+                    musteri_adi TEXT,
+                    odeme_tipi TEXT NOT NULL, -- 'NAKIT', 'KREDI_KARTI', 'VERESIYE'
+                    kasa_id INTEGER,
+                    banka_id INTEGER,
+                    tutar REAL NOT NULL,
+                    tarih DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(satis_id) REFERENCES satislar(id),
+                    FOREIGN KEY(kasa_id) REFERENCES kasalar(id),
+                    FOREIGN KEY(banka_id) REFERENCES bankalar(id)
+                )
+            """)
+
+            # ── Sütun Migrasyonları (Tablolar önceden yaratıldıysa kolon ekleme) ─
+            mevcut_sutunlar = [row[1] for row in cursor.execute("PRAGMA table_info(urunler)").fetchall()]
             if "resim_yolu" not in mevcut_sutunlar:
                 cursor.execute("ALTER TABLE urunler ADD COLUMN resim_yolu TEXT")
             if "marka" not in mevcut_sutunlar:
@@ -79,8 +142,30 @@ class DbManager:
             if "alt_kategori" not in mevcut_sutunlar:
                 cursor.execute("ALTER TABLE urunler ADD COLUMN alt_kategori TEXT DEFAULT 'Yok'")
 
+            # satislar tablosunda musteri_adi kontrolü
+            satislar_cols = [row[1] for row in cursor.execute("PRAGMA table_info(satislar)").fetchall()]
+            if "musteri_adi" not in satislar_cols:
+                cursor.execute("ALTER TABLE satislar ADD COLUMN musteri_adi TEXT DEFAULT 'Perakende Müşteri'")
+                
+            # odemeler tablosunda musteri_adi kontrolü
+            odemeler_cols = [row[1] for row in cursor.execute("PRAGMA table_info(odemeler)").fetchall()]
+            if "musteri_adi" not in odemeler_cols:
+                cursor.execute("ALTER TABLE odemeler ADD COLUMN musteri_adi TEXT DEFAULT 'Perakende Müşteri'")
+                
+            # stok_hareketleri tablosunda aciklama kontrolü
+            stok_hareketleri_cols = [row[1] for row in cursor.execute("PRAGMA table_info(stok_hareketleri)").fetchall()]
+            if "aciklama" not in stok_hareketleri_cols:
+                cursor.execute("ALTER TABLE stok_hareketleri ADD COLUMN aciklama TEXT DEFAULT ''")
+
             # ── Eski kayıtların düzeltilmesi (Migration) ───────────────────────
             cursor.execute("UPDATE urunler SET marka = 'Diğer' WHERE marka IS NULL OR marka = ''")
+
+            # Mevcut mutlak resim yollarını sadece dosya adı kalacak şekilde güncelle
+            cursor.execute("SELECT id, resim_yolu FROM urunler WHERE resim_yolu IS NOT NULL AND resim_yolu != ''")
+            for uid, resim_yolu in cursor.fetchall():
+                if os.path.isabs(resim_yolu):
+                    dosya_adi = os.path.basename(resim_yolu)
+                    cursor.execute("UPDATE urunler SET resim_yolu = ? WHERE id = ?", (dosya_adi, uid))
 
             # ── Örnek veri (sadece tablo boşsa) ───────────────────────────────
             cursor.execute("SELECT COUNT(*) FROM urunler")
@@ -112,4 +197,14 @@ class DbManager:
                     "INSERT INTO urunler (ad, kod, kategori, stok, resim_yolu) VALUES (?, ?, ?, ?, ?)",
                     ornekler,
                 )
+
+            # ── Varsayılan Kasa ve Banka ───────────────────────────────────────
+            cursor.execute("SELECT COUNT(*) FROM kasalar")
+            if cursor.fetchone()[0] == 0:
+                cursor.execute("INSERT INTO kasalar (ad, bakiye) VALUES ('Merkez Kasa (Nakit)', 0.0)")
+
+            cursor.execute("SELECT COUNT(*) FROM bankalar")
+            if cursor.fetchone()[0] == 0:
+                cursor.execute("INSERT INTO bankalar (ad, bakiye, komisyon_orani) VALUES ('POS / Banka Hesabı', 0.0, 0.0)")
+
             conn.commit()
