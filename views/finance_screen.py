@@ -5,7 +5,7 @@
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QFrame, QTableWidget, QTableWidgetItem, QHeaderView
+    QWidget, QVBoxLayout, QHBoxLayout, QFrame, QTableWidget, QTableWidgetItem, QHeaderView, QScrollArea
 )
 from qfluentwidgets import (
     TitleLabel, SubtitleLabel, BodyLabel, PushButton, PrimaryPushButton, ComboBox, TableWidget
@@ -29,9 +29,24 @@ class FinanceScreen(QWidget):
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setStyleSheet(f"background-color: {BG_COLOR};")
 
-        root = QVBoxLayout(self)
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.scroll_main = QScrollArea()
+        self.scroll_main.setWidgetResizable(True)
+        self.scroll_main.setFrameShape(QFrame.NoFrame)
+        self.scroll_main.setStyleSheet("background: transparent;")
+
+        container = QWidget()
+        container.setStyleSheet("background: transparent;")
+        container.setMinimumSize(950, 600)
+
+        root = QVBoxLayout(container)
         root.setContentsMargins(30, 20, 30, 30)
         root.setSpacing(16)
+
+        self.scroll_main.setWidget(container)
+        main_layout.addWidget(self.scroll_main)
 
         # ── Navigasyon Bar ────────────────────────────────────────────────────
         nav = QHBoxLayout()

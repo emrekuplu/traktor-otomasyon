@@ -16,6 +16,11 @@ import os
 import traceback
 from PyQt5.QtCore import Qt, QSharedMemory
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QStackedWidget, QMessageBox
+
+# High-DPI desteği ve piksel ölçeklemesi
+QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+
 from qfluentwidgets import setTheme, Theme
 
 from constants import BG_COLOR, IDX_LOGIN, IDX_DASH, IDX_STOCK, IDX_FINANCE, IDX_ORDER, IDX_CRITICAL, get_data_path
@@ -36,8 +41,7 @@ class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Anıl Oto – Otomasyon Sistemi")
-        self.resize(1150, 720)
-        self.setMinimumSize(950, 600)
+        self.setMinimumSize(1024, 640)
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setStyleSheet(f"background-color: {BG_COLOR};")
 
@@ -148,10 +152,6 @@ if __name__ == "__main__":
     # Global hata yakalayıcıyı ayarla
     sys.excepthook = global_exception_handler
 
-    # HiDPI Desteği
-    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
-    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
-
     app = QApplication(sys.argv)
 
     # Tek Kopya (Single Instance) Kontrolü
@@ -173,5 +173,5 @@ if __name__ == "__main__":
     setTheme(Theme.LIGHT)
     
     window = MainWindow()
-    window.show()
+    window.showMaximized()
     sys.exit(app.exec_())

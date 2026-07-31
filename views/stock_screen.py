@@ -115,14 +115,30 @@ class StockScreen(QWidget):
         event_bus.urun_degisti.connect(self._canli_guncelle)
         event_bus.stok_degisti.connect(self._canli_guncelle)
 
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.scroll_main = QScrollArea()
+        self.scroll_main.setWidgetResizable(True)
+        self.scroll_main.setFrameShape(QFrame.NoFrame)
+        self.scroll_main.setStyleSheet("background: transparent;")
+
+        container = QWidget()
+        container.setStyleSheet("background: transparent;")
+        container.setMinimumSize(950, 600)
+
+        root = QVBoxLayout(container)
+        root.setContentsMargins(0, 0, 0, 0)
+
         # ── Ana QStackedWidget ────────────────────────────────────────────────
-        self.stack = QStackedWidget(self)
+        self.stack = QStackedWidget(container)
         self.stack.setAttribute(Qt.WA_StyledBackground, True)
         self.stack.setStyleSheet(f"background-color: {BG_COLOR};")
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
         root.addWidget(self.stack)
+
+        self.scroll_main.setWidget(container)
+        main_layout.addWidget(self.scroll_main)
 
         # ── Sayfa 0: Marka Vitrini ────────────────────────────────────────────
         self.vitrin = MarkaVitrini(
