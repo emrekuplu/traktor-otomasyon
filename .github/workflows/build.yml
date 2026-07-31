@@ -1,0 +1,39 @@
+name: Build Windows Exe
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Repo Kodlarını Çek
+      uses: actions/checkout@v4
+
+    - name: Python Kur
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Kütüphaneleri Yükle
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller
+        pip install -r requirements.txt
+
+    - name: PyInstaller ile EXE Derle
+      run: |
+        pyinstaller --noconfirm --onedir --windowed --name "Traktor_Mete" main.py
+
+    - name: Çıktıyı Zip Dosyasına Dönüştür
+      run: |
+        Compress-Archive -Path dist/Traktor_Mete -DestinationPath Traktor_Mete_Windows.zip
+
+    - name: EXE Dosyasını Yükle (Artifact)
+      uses: actions/upload-artifact@v4
+      with:
+        name: Traktor-Mete-Windows-App
+        path: Traktor_Mete_Windows.zip
