@@ -26,7 +26,7 @@ jobs:
 
     - name: PyInstaller ile EXE Derle
       run: |
-        pyinstaller --noconfirm --onedir --windowed --add-data "resources;resources" --add-data "urun_resimleri;urun_resimleri" --add-data "traktor_mete_v2.db;." main.py
+        pyinstaller --noconfirm --onedir --windowed --name "Traktor_Mete" --add-data "resources;resources" --add-data "urun_resimleri;urun_resimleri" --add-data "traktor_mete_v2.db;." main.py
 
     - name: Çıktıyı Zip Dosyasına Dönüştür
       run: |
