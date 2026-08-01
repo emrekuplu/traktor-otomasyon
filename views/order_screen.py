@@ -27,12 +27,15 @@ class PosUrunKarti(QFrame):
         super().__init__(parent)
         self.urun = urun
         self._on_click = on_click
-        self.setFixedSize(160, 200)
+        self.setMinimumWidth(130)
+        self.setMaximumWidth(170)
+        self.setMinimumHeight(160)
         self.setCursor(Qt.PointingHandCursor)
         self.setAttribute(Qt.WA_StyledBackground, True)
         
         self.setStyleSheet("""
             PosUrunKarti {
+                min-width: 130px; max-width: 170px;
                 background-color: #FFFFFF;
                 border: 1px solid #E5E7EB;
                 border-radius: 8px;
@@ -44,15 +47,15 @@ class PosUrunKarti(QFrame):
         """)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
 
         # Görsel
         img_lbl = QLabel()
         img_lbl.setAlignment(Qt.AlignCenter)
         resim_yolu = urun.get("resim_yolu")
         if resim_yolu and os.path.exists(resim_yolu):
-            pix = QPixmap(resim_yolu).scaled(100, 80, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            pix = QPixmap(resim_yolu).scaled(80, 60, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             img_lbl.setPixmap(pix)
         else:
             img_lbl.setText("📦")
@@ -66,12 +69,12 @@ class PosUrunKarti(QFrame):
         ad_lbl = StrongBodyLabel(ad)
         ad_lbl.setWordWrap(True)
         ad_lbl.setAlignment(Qt.AlignCenter)
-        ad_lbl.setStyleSheet("font-size: 13px; color: #1F2937; background: transparent;")
+        ad_lbl.setStyleSheet("font-size: 12px; color: #1F2937; background: transparent;")
         layout.addWidget(ad_lbl, 1, Qt.AlignCenter)
 
         fiyat = urun.get("satis_fiyati", 0.0)
         fiyat_lbl = SubtitleLabel(para_formatla(fiyat))
-        fiyat_lbl.setStyleSheet("font-size: 14px; color: #059669; font-weight: bold; background: transparent;")
+        fiyat_lbl.setStyleSheet("font-size: 13px; color: #059669; font-weight: bold; background: transparent;")
         layout.addWidget(fiyat_lbl, 0, Qt.AlignCenter)
 
         # Stok durumu
@@ -259,8 +262,8 @@ class OrderScreen(QWidget):
         self.flow_container.setStyleSheet("background: transparent;")
         self.flow_layout = FlowLayout(self.flow_container, needAni=False)
         self.flow_layout.setContentsMargins(4, 16, 4, 16)
-        self.flow_layout.setHorizontalSpacing(16)
-        self.flow_layout.setVerticalSpacing(16)
+        self.flow_layout.setHorizontalSpacing(8)
+        self.flow_layout.setVerticalSpacing(8)
         
         self.scroll_left.setWidget(self.flow_container)
         left_layout.addWidget(self.scroll_left)
@@ -354,7 +357,7 @@ class OrderScreen(QWidget):
         btns_layout.addWidget(self.btn_veresiye)
 
         bottom_layout.addLayout(btns_layout)
-        right_layout.addWidget(bottom_frame)
+        right_layout.addWidget(bottom_frame, stretch=0)
 
         splitter.addWidget(self.right_panel)
         splitter.setSizes([650, 450])

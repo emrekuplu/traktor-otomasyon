@@ -27,11 +27,11 @@ class KpiKart(CardWidget):
         if self.on_click:
             self.setCursor(Qt.PointingHandCursor)
             
-        self.setFixedHeight(90)
+        self.setFixedHeight(80)
         self.setAttribute(Qt.WA_StyledBackground, True)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setContentsMargins(12, 10, 12, 10)
         layout.setSpacing(14)
 
         # Sol: İkon
@@ -44,7 +44,7 @@ class KpiKart(CardWidget):
         metin_col.setSpacing(2)
 
         deger_lbl = StrongBodyLabel(deger)
-        deger_lbl.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {renk};")
+        deger_lbl.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {renk};")
         metin_col.addWidget(deger_lbl)
 
         baslik_lbl = CaptionLabel(baslik)
@@ -69,7 +69,7 @@ class DashboardCard(SimpleCardWidget):
         super().__init__(parent)
         self.on_click = on_click
         self.setCursor(Qt.PointingHandCursor)
-        self.setFixedHeight(200)
+        self.setFixedHeight(170)
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setStyleSheet(
             f"SimpleCardWidget {{ background-color: {CARD_BG}; border-radius: 14px; }}"
@@ -83,8 +83,8 @@ class DashboardCard(SimpleCardWidget):
         self.setGraphicsEffect(self._shadow)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 28, 24, 24)
-        layout.setSpacing(12)
+        layout.setContentsMargins(16, 20, 16, 16)
+        layout.setSpacing(8)
 
         # ── İkon alanı ────────────────────────────────────────────────────────
         icon_path = os.path.join(IKON_KLASORU, icon_filename)
@@ -94,7 +94,7 @@ class DashboardCard(SimpleCardWidget):
         if os.path.exists(icon_path):
             img_lbl = QLabel()
             pixmap = QPixmap(icon_path)
-            pixmap = pixmap.scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            pixmap = pixmap.scaled(54, 54, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             img_lbl.setPixmap(pixmap)
             img_lbl.setAlignment(Qt.AlignCenter)
             img_lbl.setStyleSheet("background: transparent;")

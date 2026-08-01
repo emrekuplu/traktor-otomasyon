@@ -17,9 +17,15 @@ import traceback
 from PyQt5.QtCore import Qt, QSharedMemory
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QStackedWidget, QMessageBox
 
-# High-DPI desteği ve piksel ölçeklemesi
+# Windows'ta yazı ve widget'ların 2 kat büyümesini engeller
+os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
 QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
 QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+
+if hasattr(Qt, 'HighDpiScaleFactorRoundingPolicy'):
+    QApplication.setHighDpiScaleFactorRoundingPolicy(
+        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+    )
 
 from qfluentwidgets import setTheme, Theme
 
